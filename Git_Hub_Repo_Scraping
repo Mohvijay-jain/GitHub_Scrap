@@ -1,0 +1,166 @@
+from bs4 import BeautifulSoup
+import requests
+import pandas as pd
+import seaborn as sns 
+import matplotlib.pyplot as plt 
+import numpy as np
+from urllib.parse import urljoin
+import time
+import re
+
+
+
+headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0"}
+
+url='https://github.com/topics'
+
+
+
+def git_hub_scrap(url,headers):
+    try:
+        webpage = requests.get(url,headers=headers)
+
+        if 200<=webpage.status_code<=499:
+            time.sleep(1)
+            response = webpage.text
+            doc = BeautifulSoup(response, 'html.parser')
+            with open('webpage.html','w', encoding='utf-8') as f:
+                f.write(response)
+
+            topic_Tag = doc.find_all('p',class_="f3 lh-condensed mb-0 mt-1 Link--primary")
+                
+            topic_Description_tag = doc.find_all('p',class_="f5 color-fg-muted mb-0 mt-1")
+                
+            topic_Link_tag = doc.find_all('a', class_="no-underline flex-1 d-flex flex-column")
+                
+            topic_link_tag = [f"https://github.com{link.get('href')}" for link in topic_Link_tag]
+                
+            topic_tag = [title.text.strip() for title in topic_Tag]
+                
+            topic_description_tag = [title.text.strip() for title in topic_Description_tag]
+                
+        else:
+            print("Authentication Error")
+        return topic_link_tag, topic_tag, topic_description_tag
+    
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching topics: {e}")
+        return [], [], []
+
+
+def scrape_repositeries(topic_link_tag,headers):
+    try:
+        
+        base_url = "https://github.com"
+        Repo = []
+        
+        for topic_Link in topic_link_tag:
+            time.sleep(1)
+                
+            url1 = topic_Link
+                
+            topic_url = urljoin(base_url, url1)
+                
+            webpage2 = requests.get(topic_url,headers=headers)
+                
+            if 200<=webpage2.status_code<=499:
+                    
+                response1 = webpage2.text
+                    
+                doc1 = BeautifulSoup(response1, 'html.parser')
+                    
+                topic_tag_repo = doc1.find('h2',class_="h3 color-fg-muted")
+                    
+                for tag in topic_tag_repo:
+                        text = tag.get_text("\n", strip=True)
+                            
+                if topic_tag_repo:
+                        repo_count_text = topic_tag_repo.get_text(strip=True)
+                        repo_count = re.search(r'([\d,]+)', repo_count_text)
+                        Repo.append(repo_count.group(1))
+                else:
+                    print("No matching Repository found...")
+                
+            else:
+                print("Authentication Error")
+                    
+        repo_owners = []
+        repo_links = []
+        stars = []
+        repo_names = []
+                
+        for topic_repo in topic_link_tag:
+            time.sleep(1)
+                
+            url2 = topic_repo
+                
+            topic_url1 = urljoin(base_url, url2)
+                
+            webpage3 = requests.get(topic_url1,headers=headers)
+                
+            response2 = webpage3.text
+                
+            if 200<=webpage3.status_code<=499:
+                doc2= BeautifulSoup(response2, 'html.parser')
+                    
+                topic_repo1 = doc2.find_all('h3', class_="f3 color-fg-muted text-normal lh-condensed")
+                    
+                for i,repo in enumerate(topic_repo1):
+                    a_tags=repo.find_all("a")
+                        
+                    repo_owner = a_tags[0].text.strip() if a_tags else "Unknown"
+                        
+                    Repo_name = a_tags[1].text.strip() if len(a_tags) > 1 else "Unknown"
+                        
+                    Repo_link = base_url + a_tags[1]['href'] if len(a_tags) > 1 else "N/A"
+                    
+                    star_tags = doc2.find_all("span", class_="Counter js-social-count")
+                        
+                    star_count = star_tags[i].text.strip() if i<len(star_tags) else "0"
+                        
+                    repo_owners.append(repo_owner)
+                    repo_names.append(Repo_name)
+                    repo_links.append(Repo_link)
+                    stars.append(star_count)
+                    
+            else:
+                print("Authentication Error")
+                    
+        return repo_owners, repo_names, stars, repo_links
+    
+    except requests.exceptions.RequestException as e:
+            print(f"Error fetching topic repositories: {e}")
+
+
+
+
+
+if __name__ == '__main__':
+    while True:
+        topic_tag, topic_description_tag, topic_link_tag, Repo = git_hub_scrap(url,headers)
+        repo_owners, repo_names, stars, repo_links = scrape_repositeries(topic_link_tag,headers)
+        dict={
+        "Tag":topic_tag,
+        "Tag Description":topic_description_tag, 
+        "Tag Link":topic_link_tag, 
+        "Matching Repositories":Repo
+    }
+        df=pd.DataFrame(dict)
+        df.to_csv("GitHub_Scrap.csv",index=False)
+        dict1 = []
+
+        for ro, rn, s, ru in zip(repo_owners, repo_names, stars, repo_links):
+            dict1.append({ 
+                "Username": ro,
+                "Repo Name": rn,
+                "Stars": s,
+                "Repo Url": ru
+            })
+
+        df_repos = pd.DataFrame(dict1)
+
+        df_repos.to_csv("GitHub_Repositories.csv", index=False)
+
+        time_wait=3600
+        print("Waiting", time_wait, "seconds...")
+        time.sleep(time_wait)
